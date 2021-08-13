@@ -1,0 +1,627 @@
+### 创建型设计模式
+#### 一 、单例模式 ( Singleton )
+确保一个类只有一个实例，并提供该实例的全局访问点。  
+使用一个私有构造函数，一个私有静态变量和一个公有静态函数实现。
+
+
+##### 1. 懒汉式-线程不安全
+
+只有用到该类时，才会实例化该单例。  
+在多线程环境下，如果多线程同时进入 if ( uniqueInstance == null ) ， 并且此时还未生成实例，就会实例化多次 uniqueInstance。
+
+    public class Singleton{
+
+        private static Singleton uniqueInstance;
+
+        private Singleton() {}
+
+        public static Singleton getUniqueInstance() {
+            if (uniqueInstance == null) {
+                uniqueInstance = new Singleton();
+            }
+            return uniqueInstance;
+        }
+    }
+
+##### 2. 饿汉式 - 线程安全
+
+在项目启动时直接实例化 uniqueInstance ，避免了多次实例化的发生，也失去了延迟实例的资源优势
+
+    private static Singleton uniqueInstance = new Singleton();
+
+##### 3. 懒汉式 - 线程安全
+
+对 getUniqueInstance() 加锁，那么同一时间只有一个线程进入该方法，从而避免多次实例化。  
+但是该方法会导致其他试图进入该方法的线程等待，影响性能，不推荐。
+
+    public static synchronized Singleton getUniqueInstance() {
+        if (uniqueInstance == null) {
+            uniqueInstance = new Singleton();
+        }
+        return uniqueInstance;
+    }
+
+##### 4. 双重校验锁 - 线程安全
+
+当单例实例化后可以直接使用，也就是说校验其实只要在 uniqueInstance 为 null 的时候加锁判断就可以了。
+
+    public class Singleton {
+
+        private volatile static Singleton uniqueInstance;
+
+        private Singleton() {}
+
+        public static Singleton getUniqueInstance() {
+            if (uniqueInstance == null) {
+                synchronized (Singleton.class) {
+                    if (uniqueInstance == null) {
+                        uniqueInstance = new Singleton();
+                    }
+                }
+            }
+            return uniqueInstance;
+        }
+    }
+
+这样即使多个线程同时调用 getUniqueInstance() 方法，在判断需要实例化时由于加了锁最终也只有一个线程会调用 new Singleton() 语句。  
+另外使用 volatile 关键字修饰也是必要的。
+
+    uniqueInstance = new Singleton()
+
+这段代码分为三步执行：  
+
+a. 为 uniqueInstance 分配内存   
+b. 初始化 uniqueInstacne    
+c. 将 uniqueInstance 指向分配的内存
+
+由于 JVM 有指令重排序的特性，执行顺序可能会变更为 a>c>b。   
+多线程情况下如果 T1 执行了 a 和 c , T2 则会获取到一个尚未被初始化的实例。使用 valatile 可以禁止 JVM 的重排序，避免类似情况的发生。
+
+##### 5. 静态内部类实现   
+
+当 Singleton 类被加载时，静态内部类 SingletonHolder 没有被加载到内存，只有调用 SingletonHolder.INSTACNE 时才会被加载，并初始化 INSTACNE 实例，此时 JVM 能确保 INSTANCE 只被实例化一次。    
+该方法即可以延迟实例，也经由 JVM 确保了线程安全。
+
+    public class Singleton {
+
+        private Singleton() {}
+
+        private static class SingletonHolder {
+            private static final Singleton INSTANCE = new Singleton();
+        }
+
+        public static Singleton getUniqueInstance() {
+            return SingletonHolder.INSTANCE;
+        }
+    }
+
+##### 6. 枚举实现
+
+    public enum Singleton {
+
+        INSTANCE;
+
+        private String objName;
+
+        public String getObjName() {
+            return objName;
+        }
+
+        public void setObjName(String objName) {
+            this.objName = objName;
+        }
+
+        public static void main(String[] args) {
+
+            // 单例测试
+            Singleton firstSingleton = Singleton.INSTANCE;
+            firstSingleton.setObjName("firstName");
+            System.out.println(firstSingleton.getObjName());
+            Singleton secondSingleton = Singleton.INSTANCE;
+            secondSingleton.setObjName("secondName");
+            System.out.println(firstSingleton.getObjName());
+            System.out.println(secondSingleton.getObjName());
+
+            // 反射获取实例测试
+            try {
+                Singleton[] enumConstants = Singleton.class.getEnumConstants();
+                for (Singleton enumConstant : enumConstants) {
+                    System.out.println(enumConstant.getObjName());
+                }
+            } catch (Exception e) {
+            e.printStackTrace();
+            }
+        }
+    }
+
+Result:   
+
+    firstName
+    secondName
+    secondName
+    secondName
+
+该种实现可以防止反射攻击。  
+其他实现可以通过 setAccessible() 方法将私有构造函数的访问级别设置成 public 从而实例化该对象，防止该种攻击需要在构造函数中添加防止多次实例化的代码。  
+该实现由 JVM 保证只会实例化一次，所以不会被上述反射攻击。   
+该实现在多次序列化和反序列化之后，不会得到多个实例。其他实现方式则需要使用 transient 修饰所有字段并且实现序列化和反序列化的方法。
+
+#### 二 、简单工厂 ( Simple Factory )
+
+在创建一个对象时，不向客户披露内部细节，但提供一个创建对象的通用接口。  
+简单工厂把实例化的操作单独放到一个类中，这个类就成为简单工厂类，让简单工厂类来决定应该用哪个具体子类实例化。    
+这样操作能将客户类和具体子类的实现解耦，否则客户在实例化子类前需要了解所有子类的细节，如果子类修改，所有客户类都需要修改。
+
+![](assets/设计模式-6f43cadf.png)
+
+    public interface Product {}
+.
+
+    public class ConcreateProduct implements Product {}
+.
+
+    public class ConcreateProduct1 implements Product {}
+.
+
+    public class ConcreateProduct2 implements Product {}
+
+以下的 Client 类包含了实例化代码，是错误示范。客户类中如果包含这种实例化代码，则可以考虑放到简单工厂中。
+
+    public class Client {
+         public static void main(String[] args) {
+            int type = 1;
+            Product product;
+            if (type == 1) {
+             product = new ConcreateProduct1();
+            } else if (type == 2) {
+              product = new ConcreateProduct2();
+            } else {
+              product = new ConcreateProduct();
+            }
+            // do something with the product
+         }
+    }
+
+以下是 SimpleFactory 的简单工厂实现，客户类直接调用它来生成实例。
+
+    public class SimpleFactory {
+      public Product createProduct(int type) {
+        if (type == 1) {
+          return new ConcreateProduct1();
+        }
+        else if ( type == 2) {
+          return new ConcreateProduct2();
+        }
+        reutrn new ConcreateProduct();
+      }
+    }
+.
+
+    public class client{
+      public static void main(String[] args) {
+        SimpleFactory factory = new SimpleFactory();
+        Product product = factory.createProduct(1);
+      }
+    }
+
+#### 三 、工厂方法
+定义了一个创建对象的接口，但由子类决定要实例化哪个类。工厂方法把实例化操作推迟到子类。   
+在简单工厂中，创建对象的是工厂类本身，而在工厂方法中，由子类来负责创建对象。    
+下图中， Factory 有一个 doSomething() 方法，会用到一个产品对象，该对象由 factoryMethod() 方法创建。该方法是抽象的，由子类去实现。
+
+![](assets/设计模式-68120314.png)
+
+    public abstract class Factory {
+      abstract public Product factoryMethod();
+      public void doSomething() {
+        Product product = factoryMethod();
+        // do something with the product
+      }
+    }
+.    
+
+    public class ConcreateFactory extends Factory {
+      public Product factoryMethod() {
+        return new ConcreateProduct();
+      }
+    }
+.
+
+    public class ConcreateProduct1 extends Factory {
+      public Product factoryMethod() {
+        return new ConcreateProduct1();
+      }
+    }
+.
+
+    public class ConcreateProduct2 extends Factory {
+      public Product factoryMethod() {
+        return new ConcreateProduct2();
+      }
+    }
+
+#### 四 、抽象工厂
+提供一个接口，用于创建 **相关的对象家族**   
+抽象工厂模式创建的是对象家族，即创建的是一系列对象。    
+抽象工厂模式用到了工厂方法来创建单一的对象， AbstractFactory 中的 createProductA() 和 createProductB() 方法都由子类来实现， 这两个方法单独来看就是在创建一个对象，所以符合工厂模式的定义。    
+创建对象的家族这一概念在 Client 体现， Client 要通过 AbstractFactory 同时调用两个方法来创建两个对象，那么这两个对象就有很大的相关性， Client 需要同时创建出这两个对象。    
+从高层次来看，抽象工厂使用了组合，即 Client 组合了 AbstractFactory ，而工厂方法模式使用了继承。    
+![](assets/设计模式-9ab61a9d.png)
+
+    public class AbstractProductA{}
+.   
+
+    public class AbstractProductB{}
+.
+
+    public class ProductA1 extends AbstractProductA {}
+.
+
+    public class ProductA2 extends AbstractProductA {}
+.
+
+    public class ProductB1 extends AbstractProductB {}
+.
+
+    pubilc class ProductB2 extends AbstractProductB {}
+.
+
+    public abstract class AbstractFactory {
+      abstract AbstractProductA createProductA();
+      abstract AbstractProductB createProductB();
+    }
+.
+
+    public class ConcreateFactory1 extends AbstractFactory {
+      AbstractProductA createProductA() {
+        return new ProductA1();
+      }
+
+      AbstractProductB createProductB {
+        return new ProductB1();
+      }
+    }
+.
+
+    public class ConcreateFactory2 extends AbstractFactory {
+      AbstractProductA createProductA() {
+        return new ProductA2();
+      }
+
+      AbstractProductB createProductB() {
+        return new ProductB2();
+      }
+    }
+.
+
+    public class Client {
+      public static void main(String[] args) {
+        AbstractFactory factory = new ConcreateFactory1();
+        AbstractProductA productA = factory.createProductA();
+        AbstractProductB productB = factory.createProductB();
+      }
+    }
+
+#### 五 、生成器 (Builder)
+封装一个对象的构造过程，并允许按步骤构造。   
+
+![](assets/设计模式-f6809455.png)
+
+以下是简易的 StringBuilder 实现。
+
+    public class AbstractStringBuilder {
+      protected char[] value;
+      protected int count;
+
+      public AbstractStringBuilder(int capacity) {
+        count = 0;
+        value = new char[capacity];
+      }
+
+      pubilc AbstractStringBuilder append(char c) {
+        ensureCapacityInternal(count + 1);
+        value[count++] = c;
+        return this;
+      }
+
+      private void ensureCapacityInternal(int minimumCapacity) {
+        if (minimumCapacity - value.length > 0) {
+          expandCapacity(minimumCapacity);
+        }
+      }
+
+      void expandCapacity(int minimumCapacity) {
+        int newCapacity = value.length * 2 + 2;
+        if(newCapacity - minimumCapacity < 0) {
+          newCapacity = minimumCapacity;
+        }
+        if(newCapacity < 0) {
+          if(minimumCapacity < 0) {
+            throw new OutOfMemoryError();
+          }
+          newCapacity = Integer.MAX_VALUE;
+        }
+        value = Arrays.copyOf(value, newCapacity);
+      }
+    }
+.
+
+    public class StringBuilder extends AbstractStringBuilder {
+      public StringBuilder() {
+        super(16);
+      }
+
+      @Override
+      public String toString() {
+        //create a copy
+        return new String(value, 0, count);
+      }
+    }
+.
+
+    public class Client {
+      public sitatic void main(String[] args) {
+        StringBuilder sb = new StringBuilder();
+        final int count = 26;
+        for (int i = 0; i < count; i++) {
+          sb.append((char)('a'+ i));
+        }
+        System.out.println(sb.toString());
+      }
+    }
+
+#### 六 、原型模式 (Prototype)
+使用原型实例指定要创建对象的类型，通过复制这个原型来创建新对象。
+![](assets/设计模式-c55f20ad.png)
+
+    public abstract clsas Prototype {
+      abstract Prototype myClone();
+    }
+.
+
+    public class ConcreatePrototype extends Prototype {
+      private String filed;
+
+      public ConcreatePrototype(String filed) {
+        this.filed = filed;
+      }
+
+      @Override
+      Prototype myClone() {
+        return new ConcreatePrototype(filed);
+      }
+
+      @Override
+      public String toString() {
+        return filed;
+      }
+    }
+.
+
+    public class Client {
+      public static void main(String[] args){
+        Prototype prototype = new ConcreatePrototype("abc");
+        Prototype clone = prototype.myClone();
+        System.out.println(clone.toString());
+      }
+    }
+
+
+### 行为型设计模式
+#### 一 、解释器 (Interpreter)
+为语言创建解释器，通常由语言的语法和语法分析来定义。
+![](assets/设计模式-f6927244.png)
+
+Terminalexpression: 终结符表达式，每个终结符都需要一个 Terminalexpression。   
+Context: 上下文，包含解释器之外的一些全局信息。    
+
+以下是一个规则校验器的实现，有 and 和 or 规则， 通过规则可以构建一个解析树， 用来校验一个文本是否满足解析树定义的规则。   
+例如一颗解析树为 D And (A Or (B C)), 文本 "D A" 满足该解析树定义的规则。    
+这里的 Context 是 String。
+
+    public abstract class Expression {
+      public abstract boolean interpret(String str);
+    }
+.
+
+    public class TerminalExpression extends Expression {
+      private String literal = null;
+
+      public TerminalExpression(String str) {
+        literal = str;
+      }
+
+      public boolean interpret(String str) {
+        StringTokenizer st = new StringTokenizer(str);
+        while (st.hasMoreTokens()) {
+          String test = st.nextToken();
+          if (test.equals(literal)) {
+            return true;
+          }
+        }
+        return false;
+      }
+    }
+.
+
+    public class AndExpression extends Expression {
+      private Expression expression1 = null;
+      private Expression expression2 = null;
+
+      public AndExpression(Expression expression1, Expression expression2) {
+        this.expression1 = expression1;
+        this.expression2 = expression2;
+      }
+
+      public boolean interpret(String str) {
+        return expression1.interpret(str) && expression2.interpret(str);
+      }
+    }
+.
+
+    public class OrExpression extends Expression {
+      private Expression expression1 = null;
+      private Expression expression2 = null;
+
+      public OrExpression(Expression expression1, Expression expression2) {
+        this.expression1 = expression1;
+        this.expression2 = expression2;
+      }
+
+      public boolean interpret(String str) {
+        return expression1.interpret(str) || expression2.interpret(str);
+      }
+    }
+.
+
+    public class Client {
+      public static Expression buildInterpreterTree() {
+        Expression terminal1 = new TerminalExpression("A");
+        Expression terminal2 = new TerminalExpression("B");
+        Expression terminal3 = new TerminalExpression("C");
+        Expression terminal4 = new TerminalExpression("D");
+        // B C
+        Expression alternation1 = new OrExpression(terminal2, terminal3);
+        // A or (B C)
+        Expression alternation2 = new OrExpression(terminal1, alternation1);
+        // D And (A or (B C))
+        return new AndExpression(terminal4, alternation2);
+      }
+
+      public static void main(String[] args) {
+        Expression define = buildInterpreterTree();
+        String context1 = "D A";
+        String contest2 = "A B";
+        System.out.println(define.interpret(context1));
+        System.out.println(define.interpret(context2))
+      }
+    }
+
+#### 二 、迭代器 (Iterator)
+提供一种顺序访问集合对象元素的方法，并且不暴露聚合对象的内部展示。
+* Aggregate 是聚合类，其中 createIterator() 方法可以产生一个 Iterator;
+* Iterator 主要定义了 hasNext() 和 next()方法;
+* Client 组合了 Aggregate ，为了迭代遍历 Aggregate ，也需要组合 Iterator。
+![](assets/设计模式-fce5f8d3.png)
+
+
+    public interface Aggregate {
+      Iterator createIterator;
+    }
+.
+
+    public class ConcreateAggregate implements Aggregate {
+      private Intger[] items;
+      public ConcreateAggregate() {
+        items = new Integer[10];
+        for (int i = 0; i < items.length; i++) {
+          items[i] = i;
+        }
+      }
+
+      @Override
+      public Iterator createIterator() {
+        return new ConcreateIterator<Integer>(items);
+      }
+    }
+.
+
+    pubilc interface Iteraotr<Item> {
+      Item next();
+
+      boolean hasNext();
+    }
+.
+
+    public class ConcreateIterator<Item> implements Iteraotr {
+      private Item[] items;
+      private int position = 0;
+
+      public ConcreateIterator(Item[] items) {
+        this.items = items;
+      }
+
+      @Override
+      public Object next() {
+        return items[position++];
+      }
+
+      @Override
+      public boolean hasNext() {
+        return position < items.length;
+      }  
+    }
+.
+
+    public class Client {
+
+      public static void main(String[] args) {
+        Aggregate aggregate = new ConcreateAggregate();
+        Iteraotr<Integer> iterator = aggregate.createIterator();
+        while (iterator.hasNext()) {
+          System.out.println(iterator.next());
+        }
+      }
+    }
+
+#### 三 、策略 (Strategy)
+定义一系列算法，封装每个算法，并使他们可以互相转换。  
+策略模式可以让算法独立于使用它的客户端。  
+
+* Strategy 接口定义了一个算法族，他们都实现了 behavior() 方法。
+* Context 是使用到该算法族的类， 其中的 doSomething() 方法会调用 behavior() ， setStrategy(Strategy) 方法可以动态地改变 strategy 对象，也就是说能动态地改变 Context 所使用的算法。
+ ![](assets/设计模式-9da93036.png)
+
+状态模式的类图和策略模式类似，并且都是能够动态改变对象的行为。   
+但是状态模式是通过状态转移来改变 Context 所组合的 State 对象， 而策略模式是通过 Context 本身的决策来改变组合的 Strategy 对象。所谓的状态转移，是指 Context 在运行过程中由于一些条件发生改变从而使得 State 对象发生改变，注意必须是在运行过程中。  
+状态模式主要是用来解决状态转移的问题，当状态发生转移了，那么 Context 对象就会改变他的行为; 而策略模式主要是用来封装一族可以互相替代的算法族，并且可以根据需要动态地去替换 Context 使用的算法。   
+设计一个鸭子，它可以动态的改变叫声。这里的算法族是鸭子的叫声行为。   
+
+    public interface QuackBehavior {
+      void quack();
+    }
+.
+
+    public class Quack implements QuackBehavior {
+      @Override
+      public void quack() {
+        System.out.println("quack!");
+      }
+    }
+.
+
+    pubilc class Squeak implements QuackBehavior {
+      @Override
+      public void quack() {
+        System.out.println("squeak!");
+      }
+    }
+.
+
+    public class Duck {
+      private QuackBehavior quackBehavior;
+
+      public void performQuack() {
+        if (quackBehavior != null) {
+          quackBehavior.quack();
+        }
+      }
+
+      public void setQuackBehavior(QuackBehavior quackBehavior) {
+        this.quackBehavior = quackBehavior;
+      }
+    }
+.
+
+    public class Client {
+      public static void mian(String[] args) {
+        Duck duck = new Duck();
+        duck.setQuackBehavior(new Squeak());
+        duck.performQuack();
+        duck.setQuackBehavior(new Quack());
+        duck.performQuack();
+      }
+    }
+
+
+## [GitHub]("https://github.com/CyC2018/CS-Notes/blob/master/notes/%E8%AE%BE%E8%AE%A1%E6%A8%A1%E5%BC%8F%20-%20%E7%9B%AE%E5%BD%95.md")
